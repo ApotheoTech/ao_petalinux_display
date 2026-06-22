@@ -1,0 +1,4 @@
+vivado_project/*
+vitis_project/*
+.Xil/*
+*.log
