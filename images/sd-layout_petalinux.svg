@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 360" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <style>
+      .card{fill:#fafafa;stroke:#334155;stroke-width:2;}
+      .part{fill:#f8fafc;stroke:#64748b;stroke-width:1.6;}
+      .req{fill:#dcfce7;stroke:#15803d;stroke-width:1.4;}
+      .opt{fill:#eef2ff;stroke:#4f46e5;stroke-width:1.4;}
+      .hdr{fill:#0f172a;font-size:15px;font-weight:700;}
+      .sub{fill:#475569;font-size:12px;}
+      .tmono{fill:#0f172a;font-size:13px;font-family:Consolas,Menlo,monospace;}
+      .tag{font-size:11px;font-weight:700;}
+      .cap{fill:#475569;font-size:11.5px;}
+    </style>
+  </defs>
+
+  <rect class="card" x="20" y="20" width="840" height="290" rx="16"/>
+  <path d="M20,60 L20,36 Q20,20 36,20 L120,20 L120,60 Z" fill="#e2e8f0" stroke="#334155" stroke-width="2"/>
+  <text class="hdr" x="140" y="48">microSD — MBR/msdos, boot flag on p1</text>
+
+  <!-- p1 FAT -->
+  <rect class="part" x="44" y="78" width="384" height="212" rx="10"/>
+  <text class="hdr" x="64" y="106">p1 · FAT32 (0x0c, ~1 GB, boot flag)</text>
+  <rect class="req" x="64" y="120" width="344" height="96" rx="8"/>
+  <text class="tag" x="80" y="140" fill="#15803d">REQUIRED</text>
+  <text class="tmono" x="80" y="162">BOOT.BIN</text>
+  <text class="tmono" x="80" y="182">image.ub        (FIT: kernel + DTB)</text>
+  <text class="tmono" x="80" y="202">boot.scr        (loads + bootm)</text>
+  <rect class="opt" x="64" y="226" width="344" height="48" rx="8"/>
+  <text class="tag" x="80" y="246" fill="#4f46e5">OPTIONAL</text>
+  <text class="tmono" x="80" y="266">system.dtb   (DTB in image.ub is used)</text>
+
+  <!-- p2 ext4 -->
+  <rect class="part" x="452" y="78" width="384" height="212" rx="10"/>
+  <text class="hdr" x="472" y="106">p2 · ext4 (rest of card)</text>
+  <rect class="req" x="472" y="120" width="344" height="96" rx="8"/>
+  <text class="tag" x="488" y="140" fill="#15803d">ROOT FILESYSTEM</text>
+  <text class="tmono" x="488" y="164">PetaLinux rootfs</text>
+  <text class="sub" x="488" y="186">tar xvf rootfs.tar.gz -C /media/rootfs</text>
+  <text class="sub" x="488" y="206">root=/dev/mmcblk1p2  (SD1 = mmc1)</text>
+  <text class="cap" x="472" y="246">X11 + matchbox desktop · Mali GL · libdrm/modetest</text>
+  <text class="cap" x="472" y="266">(built from the §4b rootfs package groups)</text>
+
+  <text class="cap" x="44" y="334">boot.scr is mandatory — image.ub does not auto-boot. Green = required, blue = optional.</text>
+</svg>

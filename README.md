@@ -13,6 +13,37 @@ DisplayPort device tree, `boot.scr`, boot mode, USB-Ethernet networking).
 > 3-file SD card with no `boot.scr`. On 2025.2 the DisplayPort driver is the
 > mainline `zynqmp-dpsub` (different device tree) and U-Boot's bootflow needs a
 > `boot.scr`. Both are covered below.
+>
+> **Companion guide:** once this image builds and boots, the
+> **[Ubuntu 24.04 distro guide](<LINK-TO-UBUNTU-REPO>)** runs Ubuntu's userspace over
+> this same `BOOT.BIN` + device tree — this PetaLinux project is the `main` dependency
+> that guide builds against.
+
+---
+
+## Contents
+
+- [0. Target setup](#0-target-setup)
+- [1. Environment setup (Linux)](#1-environment-setup-linux)
+- [2. Hardware project (Vivado)](#2-hardware-project-vivado)
+- [3. Create the PetaLinux project (from scratch)](#3-create-the-petalinux-project-from-scratch)
+- [4. PetaLinux configuration](#4-petalinux-configuration)
+- [5. Device tree — DisplayPort (the 2025.2 fix)](#5-device-tree--displayport-the-20252-fix)
+- [6. Build](#6-build)
+- [7. SD card layout](#7-sd-card-layout)
+- [8. Boot mode & serial console](#8-boot-mode--serial-console)
+- [9. First boot — verify DisplayPort](#9-first-boot--verify-displayport)
+- [10. Networking — internet shared from a PC](#10-networking--internet-shared-from-a-pc)
+- [Appendix — symptom -> cause -> fix (everything hit during bring-up)](#appendix--symptom---cause---fix-everything-hit-during-bring-up)
+
+---
+
+### Build pipeline
+
+<p align="center">
+  <img src="images/build-pipeline.svg" width="900"
+       alt="Build pipeline: Vivado to .xsa to petalinux-create/config to petalinux-build/package to BOOT.BIN/image.ub/boot.scr to SD card to desktop">
+</p>
 
 ---
 
@@ -44,8 +75,8 @@ source ~/petalinux/2025.2/settings.sh
 ```
 
 **Don't run `petalinux-build` in a shell where you've sourced Vivado.** Vivado's
-`settings64.sh` sets `LD_LIBRARY_PATH`, and bitbake (which `petalinux-build`
-wraps). PetaLinux's own `settings.sh` does **not** set `LD_LIBRARY_PATH`, so
+`settings64.sh` sets `LD_LIBRARY_PATH`, which bitbake (the build engine
+`petalinux-build` wraps) refuses to run with. PetaLinux's own `settings.sh` does **not** set `LD_LIBRARY_PATH`, so
 the problem only appears when Vivado is sourced in the same shell. It affects
 `petalinux-build` specifically (not `petalinux-create` / `petalinux-config`).
 Fix: keep PetaLinux work in its own shell, or just `unset LD_LIBRARY_PATH` before
@@ -130,7 +161,7 @@ interface:
 > **Device Drivers → Input device support →** enable **Mouse interface** and
 > **Mice**.
 
-That's the only required kernel change. Note, you should also set a resolution size, 1920x1080 is normally waht I set after the Mouse Interface when it is selected, since most DP displays support this resolution.
+That's the only required kernel change. Note: I also set a default resolution of **1920×1080** while in here (a near-universal DP mode), right after enabling the Mouse interface.
 
 The list below is a **sanity-check
 reference only** — things you can confirm are present, but should not need to
@@ -191,6 +222,11 @@ rendering):
 ---
 
 ## 5. Device tree — DisplayPort (the 2025.2 fix)
+
+<p align="center">
+  <img src="images/dp-devicetree.svg" width="860"
+       alt="DP device tree: add port@5 endpoint on zynqmp_dpsub linked to a dpcon connector, and a ref0 fixed-clock feeding psgtr">
+</p>
 
 Put this in `project-spec/meta-user/recipes-bsp/device-tree/files/system-user.dtsi`.
 This is auto-included by the device-tree recipe — no `.bbappend` / `SRC_URI`
@@ -271,6 +307,11 @@ petalinux-package --boot --u-boot --fpga --force
 ---
 
 ## 7. SD card layout
+
+<p align="center">
+  <img src="images/sd-layout_petalinux.svg" width="880"
+       alt="SD layout: p1 FAT32 with BOOT.BIN/image.ub/boot.scr required plus optional system.dtb, p2 ext4 PetaLinux rootfs">
+</p>
  
 Two partitions on the card:
 1. **FAT32**, first partition, type `0x0c`, ~1 GB, boot flag set — holds BOOT.BIN / image.ub / boot.scr
@@ -347,6 +388,11 @@ sync
 ---
 
 ## 8. Boot mode & serial console
+
+<p align="center">
+  <img src="images/boot-flow_petalinux.svg" width="560"
+       alt="PetaLinux boot flow: power on SD1-LS 1110 to BOOT.BIN to U-Boot/boot.scr to image.ub FIT to ext4 rootfs to dpsub to X11 desktop on DisplayPort">
+</p>
 
 Set the boot-mode straps to **SD1 with level shifter**:
 
