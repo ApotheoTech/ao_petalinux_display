@@ -1,0 +1,39 @@
+/include/ "system-conf.dtsi"
+
+/ {
+    /* GT reference clock feeding the DP PS-GTR lanes.
+     * Frequency MUST match the on-board oscillator on the MGTREFCLK input
+     * selected by the PS-config DP refclk (refclk index 0 here). */
+    dp_gt_refclk: dp-gt-refclk {
+        compatible = "fixed-clock";
+        #clock-cells = <0>;
+        clock-frequency = <27000000>;
+    };
+
+    /* Physical DP connector — the DTG can't know the carrier has one,
+     * so we describe it and wire it to the DPSUB output. */
+    dpcon {
+        compatible = "dp-connector";
+        label = "P1";          /* your connector ref-des */
+        type = "full-size";    /* full-size / mini / micro */
+        port {
+            dpcon_in: endpoint { remote-endpoint = <&dpsub_dp_out>; };
+        };
+    };
+};
+
+/* Supply the GT reference clock the DTG left empty on the psgtr node. */
+&psgtr {
+    clocks = <&dp_gt_refclk>;
+    clock-names = "ref0";
+};
+
+/* Add the DP output port (port@5) the mainline driver requires. */
+&zynqmp_dpsub {
+    ports {
+        port@5 {
+            reg = <5>;
+            dpsub_dp_out: endpoint { remote-endpoint = <&dpcon_in>; };
+        };
+    };
+};
