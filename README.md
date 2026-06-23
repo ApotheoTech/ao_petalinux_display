@@ -130,7 +130,9 @@ interface:
 > **Device Drivers → Input device support →** enable **Mouse interface** and
 > **Mice**.
 
-That's the only required kernel change. The list below is a **sanity-check
+That's the only required kernel change. Note, you should also set a resolution size, 1920x1080 is normally waht I set after the Mouse Interface when it is selected, since most DP displays support this resolution.
+
+The list below is a **sanity-check
 reference only** — things you can confirm are present, but should not need to
 toggle. (Don't bother searching `CONFIG_DRM` in menuconfig; it returns dozens of
 unrelated hits and none of them need changing.)
