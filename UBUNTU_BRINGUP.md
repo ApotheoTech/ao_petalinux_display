@@ -19,12 +19,20 @@ need. Option B is only for an actual DisplayPort desktop.
 
 Both options share **Common Steps 1–2**, then branch.
 
+### Boot flow at a glance
+
+<p align="center">
+  <img src="images/boot-flow.svg" width="780"
+       alt="Boot flow: BOOT.BIN -> boot.scr.uimg, branching into Option A (Ubuntu kernel -> terminal/SSH) and Option B (vendor kernel -> desktop/DisplayPort)">
+</p>
+
 ---
 
 ## Contents
 
 - [Prerequisite: build the PetaLinux project first](#prerequisite-build-the-petalinux-project-first)
 - [What you need](#what-you-need)
+- [Hardware setup (board-specific)](#hardware-setup-board-specific)
 - [Common Steps (both options)](#common-steps-both-options)
   - [Step 1 — Flash the Ubuntu 24.04 image](#step-1--flash-the-ubuntu-2404-image)
   - [Step 2 — Build user-override.dtb from system.dtb](#step-2--build-user-overridedtb-from-systemdtb)
@@ -73,9 +81,35 @@ For Option B, build the kernel with the config in **Step B1**.
   For Option B also: `Image`, `rootfs.tar.gz`.
 - **Ubuntu 24.04 Kria SD image** — https://ubuntu.com/download/amd
 - microSD card (genuine, decent quality)
-- USB-serial adapter for console: **115200 8N1**, port `ttyPS0`
+- Micro-USB cable for the serial console: **115200 8N1**, port `ttyPS0`
 - Linux host with `dtc` (both) + `mkimage` (Option B):
   `apt install device-tree-compiler u-boot-tools`
+
+---
+
+## Hardware setup (board-specific)
+
+Two physical things before any boot. The strap setting is board-specific (diagram
+below); the serial console is just a micro-USB cable.
+
+**Boot-mode straps → SD.** Set your carrier's boot-mode straps to SD boot — value
+**1110**, read left → right M3 M2 M1 M0 (M3/M2/M1 up = 1, M0 down = 0):
+
+<p align="center">
+  <img src="images/bootmode-straps-sd.svg" width="620"
+       alt="Boot-mode straps for SD boot: M3 M2 M1 M0 left to right = 1 1 1 0">
+</p>
+
+> Switch type/labeling (DIP, jumpers, resistor straps) can differ on your board — the
+> **value 1110** is what matters. The serial log confirms a correct setting with
+> `Bootmode: LVL_SHFT_SD_MODE1`.
+
+**Serial console.** Plug the board's **micro-USB** console port into your host —
+that's the whole hookup. Open a terminal at **115200 8N1** (it enumerates as a USB
+serial port on the host; on the board it's `ttyPS0`). This is your console for both
+options, and how you drive the B6 desktop install.
+
+[↑ back to Contents](#contents)
 
 ---
 
@@ -88,6 +122,13 @@ Etcher (or `dd`) the image. Produces:
 - **p1** — FAT32 boot partition (`/boot/firmware`): holds Ubuntu's `boot.scr.uimg` +
   `image.fit`. Option A keeps these; Option B deletes them.
 - **p2** — ext4 `writable` partition = Ubuntu rootfs (`LABEL=writable`).
+
+### SD layout (what lands where, per option)
+
+<p align="center">
+  <img src="images/sd-layout.svg" width="820"
+       alt="SD layout: p1 FAT32 (boot files, differs per option) and p2 ext4 (Ubuntu rootfs, Option B adds lib/modules)">
+</p>
 
 ## Step 2 — Build `user-override.dtb` from `system.dtb`
 

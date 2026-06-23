@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <style>
+      .pcb{fill:#0f5132;stroke:#0a3d26;stroke-width:2;}
+      .sw{fill:#1e293b;stroke:#0f172a;stroke-width:1.5;}
+      .slot{fill:#334155;}
+      .toggleOn{fill:#22c55e;stroke:#14532d;stroke-width:1;}
+      .toggleOff{fill:#e2e8f0;stroke:#94a3b8;stroke-width:1;}
+      .lbl{fill:#0f172a;font-size:13px;text-anchor:middle;}
+      .lblw{fill:#ffffff;font-size:12px;font-weight:700;text-anchor:middle;}
+      .pinw{fill:#e2e8f0;font-size:11px;text-anchor:middle;}
+      .val{fill:#fde047;font-size:13px;font-weight:700;text-anchor:middle;}
+      .hdr{fill:#0f172a;font-size:16px;font-weight:700;}
+      .note{fill:#92400e;font-size:12px;}
+      .warnbox{fill:#fffbeb;stroke:#f59e0b;stroke-width:1.4;}
+    </style>
+  </defs>
+
+  <text class="hdr" x="30" y="36">Boot-mode straps → SD  (1110)</text>
+
+  <!-- PCB chunk -->
+  <rect class="pcb" x="120" y="70" width="520" height="158" rx="10"/>
+
+  <!-- switch block -->
+  <rect class="sw" x="250" y="98" width="260" height="104" rx="6"/>
+  <text class="lblw" x="380" y="118">BOOT MODE</text>
+
+  <!-- left-to-right: M3, M2, M1, M0  =>  1 1 1 0  (reads "1110") -->
+  <!-- M3 = 1 (up / ON) -->
+  <rect class="slot" x="276" y="130" width="34" height="46" rx="4"/>
+  <rect class="toggleOn" x="280" y="134" width="26" height="18" rx="3"/>
+  <text class="pinw" x="293" y="190">M3</text>
+  <text class="val" x="293" y="222">1</text>
+  <!-- M2 = 1 (up / ON) -->
+  <rect class="slot" x="330" y="130" width="34" height="46" rx="4"/>
+  <rect class="toggleOn" x="334" y="134" width="26" height="18" rx="3"/>
+  <text class="pinw" x="347" y="190">M2</text>
+  <text class="val" x="347" y="222">1</text>
+  <!-- M1 = 1 (up / ON) -->
+  <rect class="slot" x="384" y="130" width="34" height="46" rx="4"/>
+  <rect class="toggleOn" x="388" y="134" width="26" height="18" rx="3"/>
+  <text class="pinw" x="401" y="190">M1</text>
+  <text class="val" x="401" y="222">1</text>
+  <!-- M0 = 0 (down / OFF) -->
+  <rect class="slot" x="438" y="130" width="34" height="46" rx="4"/>
+  <rect class="toggleOff" x="442" y="154" width="26" height="18" rx="3"/>
+  <text class="pinw" x="455" y="190">M0</text>
+  <text class="val" x="455" y="222">0</text>
+
+  <text class="lbl" x="380" y="252" font-weight="700">SD boot = 1110   (M3 M2 M1 M0, left → right)</text>
+  <text class="lbl" x="380" y="270" font-size="11" fill="#475569">M3 M2 M1 up (1) · M0 down (0) — serial log: "Bootmode: LVL_SHFT_SD_MODE1"</text>
+
+  <!-- note -->
+  <rect class="warnbox" x="60" y="296" width="640" height="44" rx="8"/>
+  <text class="note" x="76" y="314">Pattern matches this board's SD boot (1110). Switch type/labeling (DIP, jumpers,</text>
+  <text class="note" x="76" y="332">    resistor straps) may differ on yours — the value is what matters.</text>
+</svg>
