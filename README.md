@@ -45,6 +45,8 @@ DisplayPort device tree, `boot.scr`, boot mode, USB-Ethernet networking).
        alt="Build pipeline: Vivado to .xsa to petalinux-create/config to petalinux-build/package to BOOT.BIN/image.ub/boot.scr to SD card to desktop">
 </p>
 
+[↑ back to Contents](#contents)
+
 ---
 
 ## 0. Target setup
@@ -55,6 +57,8 @@ DisplayPort device tree, `boot.scr`, boot mode, USB-Ethernet networking).
 - **Display:** native PS DisplayPort -> monitor (no HDMI adapters — the dpsub
   driver is picky about them)
 - **Network:** USB-to-Ethernet dongle, internet shared from a PC
+
+[↑ back to Contents](#contents)
 
 ---
 
@@ -92,6 +96,8 @@ alias setup-petalinux='source ~/petalinux/2025.2/settings.sh'
 Run `setup-vivado` in the terminal where you do Vivado work, and
 `setup-petalinux` in the terminal where you run `petalinux-*` commands.
 
+[↑ back to Contents](#contents)
+
 ---
 
 ## 2. Hardware project (Vivado)
@@ -127,6 +133,8 @@ Either path ends with `<name>.xsa` — the hardware handoff PetaLinux builds
 against. This Tcl + XSA pair is the source of truth for the hardware when
 rebuilding from a fresh checkout.
 
+[↑ back to Contents](#contents)
+
 ---
 
 ## 3. Create the PetaLinux project (from scratch)
@@ -147,6 +155,8 @@ petalinux-config --get-hw-description /path/to/<name>.xsa
 
 > If `petalinux-create -t project` errors on 2025.2, the newer subcommand form is
 > `petalinux-create project --template zynqMP --name <proj>`.
+
+[↑ back to Contents](#contents)
 
 ---
 
@@ -219,6 +229,8 @@ rendering):
   later without rebuilding. (Point `package-feed-urls` at a feed matching your
   PetaLinux version if you use it.)
 
+[↑ back to Contents](#contents)
+
 ---
 
 ## 5. Device tree — DisplayPort (the 2025.2 fix)
@@ -285,6 +297,8 @@ edits needed.
   <dt-bindings/phy/phy.h>` — and we don't need it here since we no longer set
   `phys`.
 
+[↑ back to Contents](#contents)
+
 ---
 
 ## 6. Build
@@ -303,6 +317,8 @@ bitstream changes:
 ```bash
 petalinux-package --boot --u-boot --fpga --force
 ```
+
+[↑ back to Contents](#contents)
 
 ---
 
@@ -385,6 +401,8 @@ sudo tar xvf images/linux/rootfs.tar.gz -C /media/rootfs/
 sync
 ```
 
+[↑ back to Contents](#contents)
+
 ---
 
 ## 8. Boot mode & serial console
@@ -423,6 +441,8 @@ Serial console:
 PuTTY / Tera Term on Windows; `picocom -b 115200 /dev/ttyUSB0` or `screen
 /dev/ttyUSB0 115200` on Linux.
 
+[↑ back to Contents](#contents)
+
 ---
 
 ## 9. First boot — verify DisplayPort
@@ -458,6 +478,8 @@ now that a DRM output exists:
 ```bash
 systemctl restart xserver-nodm
 ```
+
+[↑ back to Contents](#contents)
 
 ---
 
@@ -506,6 +528,8 @@ Bring it back with `nmcli connection up "<conn-name>"` when needed. Note:
 link-local-only on the PC gives PC<->board connectivity but **no internet** — use
 *shared*, not link-local, when you want the board online.
 
+[↑ back to Contents](#contents)
+
 ---
 
 ## Appendix — symptom -> cause -> fix (everything hit during bring-up)
@@ -521,3 +545,5 @@ link-local-only on the PC gives PC<->board connectivity but **no internet** — 
 | Monitor powers on, no desktop | DRM output now exists but X started before it | `systemctl restart xserver-nodm` (§9) |
 | `ping google.com` fails, dongle interface has only `inet6 fe80::` | No IPv4 — no DHCP server on a direct/link-local link | PC internet sharing + `udhcpc` on the board (§10) |
 | `8.8.8.8` pings, `google.com` doesn't | DNS not configured | Add `nameserver` to `/etc/resolv.conf` (§10) |
+
+[↑ back to Contents](#contents)
