@@ -1,89 +1,109 @@
 # Ubuntu 24.04 Bring-Up on Custom Kria K26 Carrier (SD Boot)
 
-How to boot Ubuntu 24.04 LTS to a login prompt on a custom K26 carrier, using a
-custom `BOOT.BIN` and a patched device tree supplied as `user-override.dtb`.
+Run Ubuntu 24.04 LTS on a custom K26 carrier from SD, using a custom `BOOT.BIN` and a
+patched device tree (`user-override.dtb`). **Two options, pick by whether you need a
+display:**
 
-> Scope: this gets you to a **working terminal / login** on serial console.
-> DisplayPort output is **not** covered here (still WIP).
+| | **Option A — Headless (terminal + SSH)** | **Option B — Desktop + DisplayPort** |
+| :--- | :--- | :--- |
+| Kernel | Ubuntu's stock **6.8** (from `image.fit`) | PetaLinux **vendor kernel** (your `Image`) |
+| DisplayPort | no | **yes** (`/dev/dri/card0`) |
+| Kernel rebuild | **not needed** | needed (DP/media/squashfs config) |
+| Copy `Image` + modules | **no** | yes |
+| Boot files on FAT | keep Ubuntu's stock ones | replace with your own |
+| Effort | minimal — just patch the DTB | full vendor-kernel swap |
+
+Everything is reachable over the **serial console (115200 8N1)** in both options, and
+over **SSH** once networking is up — so if you don't need a screen, Option A is all you
+need. Option B is only for an actual DisplayPort desktop.
+
+Both options share **Common Steps 1–2**, then branch.
 
 ---
 
-## ⚠️ Prerequisite: build the PetaLinux project first
+## Contents
 
-**This guide does not stand alone.** It is the Ubuntu-distro branch and it
-*consumes* two artifacts that are produced by the PetaLinux project:
+- [Prerequisite: build the PetaLinux project first](#prerequisite-build-the-petalinux-project-first)
+- [What you need](#what-you-need)
+- [Common Steps (both options)](#common-steps-both-options)
+  - [Step 1 — Flash the Ubuntu 24.04 image](#step-1--flash-the-ubuntu-2404-image)
+  - [Step 2 — Build user-override.dtb from system.dtb](#step-2--build-user-overridedtb-from-systemdtb)
+- [**Option A — Headless: terminal + SSH**](#option-a--headless-terminal--ssh-ubuntu-stock-kernel)
+  - [A1 — Copy two files to the FAT partition](#a1--copy-two-files-to-the-fat-partition-p1)
+  - [A2 — Boot, then reach it over serial / SSH](#a2--boot-then-reach-it-over-serial--ssh)
+  - [A3 — Verify](#a3--verify)
+- [**Option B — Desktop + DisplayPort**](#option-b--desktop--displayport-petalinux-vendor-kernel)
+  - [B1 — Build the PetaLinux kernel (menuconfig)](#b1--build-the-petalinux-kernel-with-the-right-config-menuconfig)
+  - [B2 — Compile boot.scr.uimg from boot.cmd](#b2--compile-your-bootscruimg-from-bootcmd)
+  - [B3 — Inject the vendor kernel modules](#b3--inject-the-vendor-kernel-modules-into-the-ubuntu-rootfs)
+  - [B4 — Lay out the FAT boot partition](#b4--lay-out-the-fat-boot-partition-p1-remove-stock-add-yours)
+  - [B5 — Boot & verify (DisplayPort)](#b5--boot--verify-desktop--displayport)
+  - [B6 — Install the Kria desktop](#b6--install-the-kria-desktop-on-the-board)
+- [Debug — model not found](#debug--if-the-model-isnt-found-unsupported-platform-)
+- [Gotchas](#gotchas)
+- [Repeatable build summary](#repeatable-build-summary)
 
-| Artifact | Produced by | Used here for |
+> ↩ Each section ends with a [**↑ back to Contents**](#contents) link.
+
+---
+
+## Prerequisite: build the PetaLinux project first
+
+This is the Ubuntu-distro branch; it consumes artifacts from the PetaLinux project
+(`main`): **[PetaLinux project — `main`](<LINK-TO-PETALINUX-REPO>)**.
+
+| Artifact | Needed by | Used for |
 | :--- | :--- | :--- |
-| `BOOT.BIN` | PetaLinux project (`main`) | FSBL/`psu_init`, PMUFW, ATF, U-Boot for the custom carrier |
-| `system.dtb` | PetaLinux project (`main`) | the hardware device tree → patched into `user-override.dtb` |
+| `BOOT.BIN` | A + B | FSBL/`psu_init`, PMUFW, ATF, U-Boot for the carrier |
+| `system.dtb` | A + B | hardware device tree → patched into `user-override.dtb` |
+| `Image` | **B only** | the vendor kernel we boot for DisplayPort |
+| `rootfs.tar.gz` | **B only** | source of `lib/modules/$KVER` injected into the rootfs |
 
-**Order of operations:**
+For Option B, build the kernel with the config in **Step B1**.
 
-1. **Build / run the `main` PetaLinux project first** → see the PetaLinux repo:
-   **[PetaLinux project — `main`](<LINK-TO-PETALINUX-REPO>)**. That build emits the
-   `BOOT.BIN` and `system.dtb` referenced throughout this guide
-   (`images/linux/BOOT.BIN`, `images/linux/system.dtb`).
-2. **Then follow this guide** (the Ubuntu 24.04 branch) to lay those artifacts onto
-   an Ubuntu rootfs and SD-boot.
-
-If `main` hasn't been built, you have no `BOOT.BIN` / `system.dtb` and nothing below
-will work. The custom-carrier hardware enablement (clocks, MIO, GT, psu_init) lives
-entirely in the PetaLinux project; Ubuntu here supplies only the userspace.
-
-> Branch layout: `main` = PetaLinux BSP/project (hardware) · this branch = Ubuntu
-> 24.04 distro bring-up (userspace), dependent on `main`.
+> Branch layout: `main` = PetaLinux BSP/project (hardware + vendor kernel) ·
+> this branch = Ubuntu 24.04 distro bring-up (userspace), dependent on `main`.
 
 ---
 
 ## What you need
 
 - Custom carrier + K26 SOM, boot-mode straps set to **SD**
-- **`BOOT.BIN`** — from the **PetaLinux project (`main`)**, at
-  `images/linux/BOOT.BIN` (FSBL/`psu_init` + PMUFW + ATF + U-Boot). This is what
-  makes the custom carrier come up.
-- **`system.dtb`** — from the same PetaLinux build, at `images/linux/system.dtb`
-  (your hardware device tree)
-- **Ubuntu 24.04 Kria SD image** — https://ubuntu.com/download/amd (kernel 6.8.x)
-- microSD card (use a genuine, decent-quality card)
+- From the PetaLinux build (`images/linux/`): `BOOT.BIN`, `system.dtb` (both options).
+  For Option B also: `Image`, `rootfs.tar.gz`.
+- **Ubuntu 24.04 Kria SD image** — https://ubuntu.com/download/amd
+- microSD card (genuine, decent quality)
 - USB-serial adapter for console: **115200 8N1**, port `ttyPS0`
-- A Linux host with `dtc` (`apt install device-tree-compiler`) and an SD writer
+- Linux host with `dtc` (both) + `mkimage` (Option B):
+  `apt install device-tree-compiler u-boot-tools`
 
 ---
 
+# Common Steps (both options)
+
 ## Step 1 — Flash the Ubuntu 24.04 image
 
-Write the downloaded image to the SD card with Etcher (or `dd`). This produces:
+Etcher (or `dd`) the image. Produces:
 
-- **p1** — FAT32 boot partition (`/boot/firmware`), holds `BOOT.BIN`, `boot.scr.uimg`, `image.fit`
-- **p2** — ext4 `writable` partition = the Ubuntu rootfs (`root=LABEL=writable`)
+- **p1** — FAT32 boot partition (`/boot/firmware`): holds Ubuntu's `boot.scr.uimg` +
+  `image.fit`. Option A keeps these; Option B deletes them.
+- **p2** — ext4 `writable` partition = Ubuntu rootfs (`LABEL=writable`).
 
-Leave Ubuntu's stock `boot.scr.uimg` and `image.fit` in place — the stock boot
-script already has a hook that loads `user-override.dtb` and uses it in place of
-the reference Kria DTB.
-
-## Step 2 — Build `user-override.dtb` from your `system.dtb`
-
-Two edits are required. Do both on a host:
+## Step 2 — Build `user-override.dtb` from `system.dtb`
 
 ```bash
 dtc -I dtb -O dts system.dtb -o uo.dts
 ```
 
-**a) Disable SD write-protect.** Under *this* boot method (Ubuntu 6.8 kernel via
-`image.fit` + `user-override.dtb`), the SD card comes up read-only at the block
-level — root mounts `ro`, `systemd-remount-fs` fails, and you drop to emergency
-mode. `disable-wp;` is the workaround that makes this method mount rw.
+**a) Disable SD write-protect.** Prevents the SD coming up read-only at the block level
+(root mounts `ro` → `systemd-remount-fs` fails → emergency mode → no usable system).
 
-> NOTE — this is **not** a carrier hardware fault. The same SD in the same slot
-> mounts rw under PetaLinux with no `disable-wp`. The read-only is specific to this
-> Ubuntu-over-`image.fit` path (how Ubuntu's 6.8 SDHCI driver handles the WP line
-> here), so `disable-wp` is compensating for that method, not for the board.
-
-Add `disable-wp;` to the SD controller node (and the eMMC node, harmless):
+> **REQUIRED for Option A** (Ubuntu's 6.8 kernel exhibits the read-only behavior).
+> Harmless / usually unnecessary for Option B (the vendor kernel mounts rw without it),
+> but fine to leave in.
 
 ```dts
-mmc@ff170000 {            /* SD  = mmcblk1 — REQUIRED */
+mmc@ff170000 {            /* SD = mmcblk1 */
     ...
     disable-wp;
 };
@@ -93,14 +113,12 @@ mmc@ff160000 {            /* eMMC = mmcblk0 — optional */
 };
 ```
 
-> ⚠️ It is `disable-wp` with a **HYPHEN**. `disable_wp` (underscore) is silently
-> ignored by the kernel and does nothing — this was the single biggest time sink.
+> ⚠️ `disable-wp` with a **HYPHEN**. `disable_wp` (underscore) is silently ignored.
 
-**b) Set a recognizable model string.** Ubuntu's `flash-kernel` reads
-`/proc/device-tree/model`; an empty/unknown string gives `Unsupported platform ''`
-and wedges `apt`. On this tree the root `model` is empty/missing (hence the empty
-quotes in the error), so you **add** it to the **root `/ {` node** — the outermost
-block, alongside `compatible`, not inside `aliases`/`axi`/`cpus`:
+**b) Set a recognizable model string.** Ubuntu's `flash-kernel` (runs on `apt` kernel
+operations) reads `/proc/device-tree/model`; empty/unknown → `Unsupported platform ''`
+wedges `apt`. Needed for **both** options (both use `apt`). Add to the **root `/ {`
+node**:
 
 ```dts
 / {
@@ -110,9 +128,8 @@ block, alongside `compatible`, not inside `aliases`/`axi`/`cpus`:
 };
 ```
 
-> The `*` in flash-kernel's db entries (e.g. `ZynqMP K26*`) is a **glob wildcard,
-> not a literal character**. `ZynqMP K26` satisfies `ZynqMP K26*`, so use
-> `ZynqMP K26` — **do not** put the `*` in your `model` string.
+> The `*` in flash-kernel db entries (`ZynqMP K26*`) is a **glob wildcard**.
+> `ZynqMP K26` satisfies it — **do not** include the `*`.
 
 Recompile:
 
@@ -120,62 +137,263 @@ Recompile:
 dtc -I dts -O dtb uo.dts -o user-override.dtb
 ```
 
-## Step 3 — Copy files to the FAT32 boot partition (p1)
+[↑ back to Contents](#contents)
 
-Place these at the **root** of p1, alongside the existing `boot.scr.uimg` / `image.fit`:
+---
 
-- `BOOT.BIN`  (exact name, uppercase)
-- `user-override.dtb`  (exact name — watch for stale copies / `.dtb.dtb`)
+# Option A — Headless: terminal + SSH (Ubuntu stock kernel)
 
-## Step 4 — Boot
+No kernel rebuild, no `Image`, no module copy. You boot Ubuntu's own 6.8 kernel via the
+stock `image.fit`, and its boot script auto-loads your `user-override.dtb`. (Snaps work
+out of the box here — Ubuntu's kernel has squashfs built in.)
 
-1. Set carrier boot-mode straps to **SD**, insert the card.
-2. Connect serial console (**115200 8N1**).
-3. Power on.
+## A1 — Copy two files to the FAT partition (p1)
 
-Boot flow: your `BOOT.BIN` U-Boot → runs `boot.scr.uimg` → loads `image.fit`
-(Ubuntu 6.8 kernel + ramdisk) and **your** `user-override.dtb` at `0x70000000` →
-`root=LABEL=writable` on p2 → Ubuntu 24.04 reaches the login prompt.
+Leave Ubuntu's stock `boot.scr.uimg` and `image.fit` **in place**. Just add:
 
-Default login: `ubuntu` / `ubuntu` (forces a password change on first login).
+```bash
+FAT=/media/<user>/system-boot             # auto-mounted vfat p1 (verify: findmnt "$FAT")
+sudo cp BOOT.BIN          "$FAT/BOOT.BIN"
+sudo cp user-override.dtb "$FAT/user-override.dtb"
+```
 
-## Step 5 — Verify
+The stock script's `user-override.dtb` hook uses your DTB in place of the reference one.
+
+## A2 — Boot, then reach it over serial / SSH
+
+1. Boot-mode straps to **SD**, insert card, serial at **115200 8N1**, power on.
+2. Boot flow: your `BOOT.BIN` U-Boot → stock `boot.scr.uimg` → `image.fit` (Ubuntu 6.8
+   kernel) + your `user-override.dtb` → `root=LABEL=writable` → login.
+
+Default login: `ubuntu` / `ubuntu` (forces password change first time).
+
+**SSH** (Ubuntu Kria server image ships openssh; networking is the USB-ethernet on this
+carrier):
+
+```bash
+ip a                                  # find the address (USB eth: cdc_ncm / ax88179)
+sudo systemctl enable --now ssh       # if it isn't already running
+# from your workstation:
+ssh ubuntu@<board-ip>
+```
+
+## A3 — Verify
 
 ```bash
 uname -r                 # 6.8.0-xxxx-xilinx (Ubuntu kernel)
 cat /etc/os-release      # Ubuntu 24.04
-findmnt /                # /dev/mmcblk1p2, options include rw   <-- rw is the win
-cat /sys/block/mmcblk1/ro   # 0  (write-protect cleared)
-cat /proc/cmdline
+findmnt /                # /dev/mmcblk1p2, rw   <-- rw = disable-wp took
+cat /proc/device-tree/model   # ZynqMP K26
 ```
 
-`findmnt /` showing **rw** = the `disable-wp` fix took and you're past the
-emergency-mode trap.
+Done — full headless Ubuntu 24.04 over serial/SSH. No DisplayPort (use Option B for
+that).
+
+[↑ back to Contents](#contents)
+
+---
+
+# Option B — Desktop + DisplayPort (PetaLinux vendor kernel)
+
+Ubuntu's 6.8 kernel does **not** drive DisplayPort on this tree. The same
+`user-override.dtb` + `BOOT.BIN` drive DP correctly under the **PetaLinux vendor
+kernel** — so we boot your `Image` over the Ubuntu rootfs. This adds a kernel rebuild,
+`Image` + module injection, and replacing the stock boot files.
+
+## B1 — Build the PetaLinux kernel with the right config (menuconfig)
+
+In `petalinux-config -c kernel` confirm at least:
+
+```
+CONFIG_DRM=y
+CONFIG_DRM_ZYNQMP_DPSUB=y          # the DP DRM driver (=y so it's built-in, no .ko race)
+CONFIG_PHY_XILINX_ZYNQMP=y         # PS-GTR phy for DP
+CONFIG_DRM_KMS_HELPER=y
+CONFIG_MEDIA_SUPPORT=y             # media / V4L2 subsystem
+CONFIG_VIDEO_DEV=y
+CONFIG_MMC=y / CONFIG_MMC_SDHCI=y / CONFIG_EXT4_FS=y   # built-in (needed for no-initrd root mount)
+CONFIG_SQUASHFS=y                  # REQUIRED for snapd/snaps (Firefox is a snap)
+CONFIG_SQUASHFS_XZ=y               # snaps are xz-compressed
+CONFIG_SQUASHFS_ZSTD=y             # newer snaps use zstd — enable both
+CONFIG_SQUASHFS_LZO=y              # harmless, covers older snaps
+CONFIG_BLK_DEV_LOOP=y              # snaps mount via loop devices
+```
+
+> **Snap / Firefox:** Ubuntu 24.04 ships Firefox (and others) as **snaps** = squashfs
+> images snapd loop-mounts. PetaLinux's default kernel omits squashfs, so the vendor
+> kernel gives `unknown filesystem squashfs` / `snapd not fully supported`. The
+> `CONFIG_SQUASHFS*` + `CONFIG_BLK_DEV_LOOP=y` above fix it (build **`=y`** — snapd
+> mounts very early). (This is *only* a vendor-kernel problem; Ubuntu's own kernel in
+> Option A already has squashfs.) Alternative: install Firefox from Mozilla's `.deb`.
+
+> Also enable the media (V4L2) subsystem in the kernel and the GStreamer userspace
+> (`petalinux-config -c rootfs` → `gstreamer1.0*` / `libdrm`) so the desktop + video
+> pipeline have what they need. Build DP/DRM **`=y`**, not `=m`.
+
+> **Kernel-config changes only touch `Image` + `lib/modules` — NOT
+> `user-override.dtb`.** squashfs, loop, DP/DRM, media all live in the `Image`. The DTB
+> carries only hardware description (Step 2). After any kernel rebuild: redeploy the new
+> `Image` (B4) and re-inject the matching `lib/modules/$KVER` (B3) **together**, and
+> leave `user-override.dtb` alone. Re-check `$KVER` — the git suffix can change.
+
+## B2 — Compile your `boot.scr.uimg` from `boot.cmd`
+
+Author the script as text, then `mkimage` it. This loads your `Image` +
+`user-override.dtb` and mounts the Ubuntu rootfs directly (no initrd):
+
+`boot.cmd`:
+
+```text
+# Vendor kernel + your dtb + Ubuntu 24.04 rootfs
+echo "== Vendor kernel + user-override.dtb + Ubuntu rootfs =="
+load mmc 1:1 0x70000000 user-override.dtb        # your DTB (proven DP-good)
+load mmc 1:1 0x00200000 Image                     # your PetaLinux uncompressed kernel
+setenv bootargs "root=/dev/mmcblk1p2 rootwait rw earlycon console=ttyPS0,115200 console=tty1 cma=512M"
+booti 0x00200000 - 0x70000000
+```
+
+Compile `.cmd` → `.scr.uimg`:
+
+```bash
+mkimage -A arm64 -O linux -T script -C none -d boot.cmd boot.scr.uimg
+```
+
+`mmc 1:1` = SD/FAT. `booti <kernel> - <dtb>` — the `-` = **no initrd** (why the kernel
+needs MMC/ext4 built-in, B1). `root=/dev/mmcblk1p2` = the Ubuntu writable partition.
+
+## B3 — Inject the vendor kernel modules into the Ubuntu rootfs
+
+The kernel looks for its modules in `/lib/modules/<version>`. Pulling one subdir
+straight out of the tarball is fiddly (`./lib/...` vs `lib/...` path matching), so just
+**extract the whole tarball into its own directory, then look inside `lib/modules/` to
+see the version name**, and copy that directory over.
+
+```bash
+# 1. extract the whole rootfs tarball into its own scratch dir on the HOST
+mkdir -p ~/petalinux-rootfs
+sudo tar xzf images/linux/rootfs.tar.gz -C ~/petalinux-rootfs
+
+# 2. look at what's in lib/modules — the printed dir name IS your kernel version
+ls ~/petalinux-rootfs/lib/modules/
+#   -> e.g.  6.12.40-xilinx-g31626ef92ff1
+```
+
+Take whatever that prints and copy it onto the Ubuntu writable partition (p2), then
+rebuild the module db for it:
+
+```bash
+KVER=6.12.40-xilinx-g31626ef92ff1         # <- paste the exact name 'ls' printed above
+ROOT=/media/<user>/writable               # auto-mounted ext4 p2 (verify: findmnt "$ROOT")
+
+sudo cp -a ~/petalinux-rootfs/lib/modules/"$KVER" "$ROOT/lib/modules/"   # -a preserves symlinks/perms
+sudo chroot "$ROOT" depmod "$KVER"        # rebuild module db for YOUR kernel inside Ubuntu's rootfs
+```
+
+> The version from `ls lib/modules/` must match your kernel's `uname -r` exactly
+> (git suffix included) — that's why we read it off the extracted tree instead of
+> typing it. Use `cp -a` (not plain `cp`) so the `build`/`source` symlinks `depmod`
+> needs survive; the chroot `depmod` makes the modules resolvable for your kernel.
+
+## B4 — Lay out the FAT boot partition (p1): remove stock, add yours
+
+```bash
+FAT=/media/<user>/system-boot             # vfat p1 (verify: findmnt "$FAT")
+
+# REMOVE the Ubuntu-flash boot files (back up first) — these are for Ubuntu's kernel
+sudo mv "$FAT/image.fit"      "$FAT/image.fit.ubuntu"
+sudo mv "$FAT/boot.scr.uimg"  "$FAT/boot.scr.uimg.ubuntu"
+
+# ADD yours
+sudo cp BOOT.BIN              "$FAT/BOOT.BIN"            # if not already there
+sudo cp images/linux/Image    "$FAT/Image"
+sudo cp user-override.dtb     "$FAT/user-override.dtb"
+sudo cp boot.scr.uimg         "$FAT/boot.scr.uimg"       # the one compiled in B2
+```
+
+FAT root must now contain exactly these four for boot — `BOOT.BIN`, `Image`,
+`user-override.dtb`, your `boot.scr.uimg` — and **not** the stock `image.fit` /
+`boot.scr.uimg` (now `*.ubuntu` backups).
+
+## B5 — Boot & verify (desktop + DisplayPort)
+
+1. Straps to **SD**, insert, serial at **115200 8N1**, power on.
+2. Boot flow: your `BOOT.BIN` U-Boot → your `boot.scr.uimg` → `Image` +
+   `user-override.dtb` → `root=/dev/mmcblk1p2` → Ubuntu 24.04 on the vendor kernel.
+
+```bash
+uname -r            # 6.12.40-xilinx-g31626ef92ff1  -> YOUR kernel
+findmnt /           # /dev/mmcblk1p2, ext4, rw
+ls /dev/dri/        # card0 + renderD128            -> DisplayPort alive
+dmesg | grep -iE 'dpsub|psgtr|drm|card'
+```
+
+If `/dev/dri/card0` is present but no desktop: `sudo systemctl restart gdm3`.
+
+> `Unable to mount root fs` / panic at mount → vendor kernel lacks built-in MMC or ext4;
+> rebuild with `CONFIG_MMC*` / `CONFIG_EXT4_FS=y` (B1), or add an initrd to the script.
+
+## B6 — Install the Kria desktop (on the board)
+
+`/dev/dri/card0` from B5 means the DP **pipe** is alive, but you still need a desktop
+environment to draw on it. Install `ubuntu-desktop-kria` **on the running board**.
+
+> **Run this over the serial console (USB-to-UART)** — the GUI isn't up yet, so the
+> serial session (or SSH) is how you drive the board for this step. **The board must
+> have working internet access** — `apt` pulls a large amount here. Confirm first:
+> `ping -c1 archive.ubuntu.com` (and `ip a` to check you have an address).
+
+> ⚠️ **Hold the kernel + flash-kernel BEFORE the upgrade.** `apt upgrade` can pull a new
+> Ubuntu `linux-image` and trigger `flash-kernel` to rewrite `image.fit` /
+> `boot.scr.uimg` — clobbering the boot files you set up in B4. Pin them first:
+> ```bash
+> sudo apt-mark hold flash-kernel linux-image-xilinx-zynqmp linux-image-6.8.0-1029-xilinx
+> ```
+
+Add the Xilinx/Kria PPAs, update, and install the desktop:
+
+```bash
+sudo add-apt-repository ppa:xilinx-apps --yes &&
+sudo add-apt-repository ppa:ubuntu-xilinx/default --yes &&
+sudo add-apt-repository ppa:xilinx-apps/xilinx-drivers --yes &&
+sudo add-apt-repository ppa:lely/ppa --yes &&
+sudo apt update --yes &&
+sudo apt upgrade --yes
+
+sudo apt update
+sudo apt install ubuntu-desktop-kria
+sudo reboot
+```
+
+After the reboot the desktop should come up on the DisplayPort monitor. If you reach a
+login/terminal but no GUI with `/dev/dri/card0` present, start the display manager:
+`sudo systemctl restart gdm3`.
+
+> Firefox and other snaps need squashfs in the **vendor** kernel (B1). If
+> `ubuntu-desktop-kria` brings in snaps and you see `unknown filesystem squashfs`, that
+> kernel config is missing — rebuild per B1.
+
+> **Firefox snap may need reinstalling.** If Firefox was installed while the kernel
+> lacked squashfs (so its snap mount failed), it can stay broken even after you add
+> squashfs and reboot. Reinstall it once the vendor kernel has squashfs support:
+> ```bash
+> sudo snap remove firefox
+> sudo snap install firefox
+> ```
+> Verify snaps mount at all with `snap list` and `mount | grep snapd` (should show
+> squashfs loop mounts). If you'd rather skip snap entirely, install Firefox from
+> Mozilla's `.deb` repo instead.
+
+[↑ back to Contents](#contents)
 
 ---
 
 ## Debug — if the model isn't found (`Unsupported platform ''`)
 
-Read what's live on the running board (authoritative — it's the tree the kernel
-actually booted):
-
 ```bash
-cat /proc/device-tree/model; echo        # e.g. "ZynqMP K26"  (echo adds a newline)
+cat /proc/device-tree/model; echo                       # live value (e.g. "ZynqMP K26")
+dtc -I dtb -O dts user-override.dtb | grep -m1 'model =' # value compiled into the DTB
+grep -i 'Machine:' /usr/share/flash-kernel/db/all.db | sort -u   # accepted patterns
 ```
-
-Confirm it inside the compiled DTB from a host:
-
-```bash
-dtc -I dtb -O dts user-override.dtb | grep -m1 'model ='
-```
-
-List the patterns flash-kernel will accept:
-
-```bash
-grep -i 'Machine:' /usr/share/flash-kernel/db/all.db | sort -u
-```
-
-Check your live model matches a db pattern (same `*` glob semantics as the shell):
 
 ```bash
 m=$(cat /proc/device-tree/model)
@@ -185,26 +403,51 @@ case "$m" in
 esac
 ```
 
-If `/proc/device-tree/model` reads something other than `ZynqMP K26`, the wrong
-DTB is live (stale copy) — recheck the `user-override.dtb` on the FAT partition.
+Unexpected value = wrong/stale DTB live — recheck `user-override.dtb` on the FAT.
+
+[↑ back to Contents](#contents)
 
 ---
 
-## Gotchas (all hit during bring-up)
+## Gotchas
 
-- **`disable-wp` not `disable_wp`** — hyphen, or it's silently ignored. Needed only
-  for this Ubuntu method; not a carrier WP fault (PetaLinux mounts rw without it).
-- **`user-override.dtb`** must be at the FAT root, exact name; confirm date/size
-  to avoid booting a stale copy.
-- **`model`** must be non-empty and match a flash-kernel db pattern, or `apt` breaks
-  with `Unsupported platform ''`. Add it to the **root `/ {` node**. The `*` in db
-  entries is a wildcard — use `ZynqMP K26`, **not** `ZynqMP K26*`.
-- **Use a genuine SD card** — flaky cards compound the WP/emergency-mode symptoms.
-- Boot path (`image.fit`) is decoupled from `apt`'s kernel management; an `apt`
-  kernel upgrade can leave the running kernel and `/lib/modules` mismatched.
-  Consider `apt-mark hold` on the kernel once stable.
+- **Option A vs B:** headless terminal/SSH = Option A (Ubuntu kernel, just patch the
+  DTB). DisplayPort = Option B (vendor kernel, the full swap). Don't do B's kernel
+  rebuild / `Image` copy if you only need a terminal.
+- **`disable-wp` not `disable_wp`** — hyphen, or silently ignored. Required for Option A.
+- **`model`** must be non-empty and match a flash-kernel db pattern (root `/ {` node),
+  or `apt` breaks. The `*` is a wildcard — use `ZynqMP K26`, not `ZynqMP K26*`. Both
+  options.
+- **(B) DP needs the vendor kernel** — Ubuntu's 6.8 won't drive it on this tree.
+- **(B) Snaps need squashfs in the vendor kernel** — `unknown filesystem squashfs`
+  means `CONFIG_SQUASHFS=y` + `CONFIG_BLK_DEV_LOOP=y` are missing (B1). Ubuntu's own
+  kernel (Option A) already has squashfs.
+- **(B) Delete the stock boot files** — `image.fit` + stock `boot.scr.uimg`; boot your
+  own. **(A) keep them.**
+- **(B) Module dir must match `uname -r` exactly** (git suffix included); `cp -a` +
+  chroot `depmod`. Redeploy `Image` + `lib/modules` together after any kernel rebuild.
+- **Use a genuine SD card.**
+- **Hold apt's kernel/flash-kernel** so `apt` can't desync things:
+  `sudo apt-mark hold flash-kernel linux-image-6.8.0-1029-xilinx`
 
-## Not covered (open)
+[↑ back to Contents](#contents)
 
-- **DisplayPort output** — `zynqmp_dpsub` probes but no `/dev/dri` yet on Ubuntu's
-  6.8 kernel; under investigation (DRM/psgtr module-load vs vendor-kernel behavior).
+---
+
+## Repeatable build summary
+
+**Common:** build `main` PetaLinux → `BOOT.BIN`, `system.dtb` → flash Ubuntu 24.04 →
+patch DTB (`disable-wp` + `model = "ZynqMP K26"`) → `user-override.dtb`.
+
+**Option A (headless):** FAT p1 = keep stock `image.fit`/`boot.scr.uimg`, add `BOOT.BIN`
++ `user-override.dtb` → boot → terminal/SSH on Ubuntu's 6.8 kernel.
+
+**Option B (display):** build kernel with B1 config (DP/media/squashfs/MMC/ext4) →
+`Image`, `rootfs.tar.gz` → compile `boot.scr.uimg` from `boot.cmd` (B2) → inject
+`lib/modules/$KVER` into rootfs (B3) → FAT p1: remove stock `image.fit`/`boot.scr.uimg`,
+add `BOOT.BIN` + `Image` + `user-override.dtb` + your `boot.scr.uimg` (B4) → boot &
+verify `/dev/dri/card0` (B5) → on the board (serial console, internet required): hold
+the kernel, add the Xilinx PPAs, `apt install ubuntu-desktop-kria`, reboot (B6) →
+desktop + DisplayPort + snaps.
+
+[↑ back to Contents](#contents)
